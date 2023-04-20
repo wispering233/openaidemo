@@ -3,7 +3,7 @@ package com.yfs.opai.controller.model;
 import lombok.Data;
 
 @Data
-public class Message {
+public class WeChatMessage {
     String role;
     String content;
 }

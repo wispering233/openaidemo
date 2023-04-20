@@ -17,8 +17,8 @@ public class CustomOkHttpClient  {
 
     public static OpenAiService getService(){
         ObjectMapper mapper = defaultObjectMapper();
-        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress("23.224.125.136", 8088));
-        OkHttpClient client = defaultClient("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", Duration.ofSeconds(15))
+        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress("38.6.178.54", 6666));
+        OkHttpClient client = defaultClient("sk-ilUT6zMVVQ3T3BlbkFJxMXGVd49BHhYK2A1kV26", Duration.ofSeconds(15))
                 .newBuilder()
                 .proxy(proxy)
                 .build();

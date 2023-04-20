@@ -5,13 +5,21 @@ import cn.hutool.json.JSONConverter;
 import cn.hutool.json.JSONUtil;
 import com.theokanning.openai.completion.chat.*;
 import com.theokanning.openai.service.OpenAiService;
-import com.yfs.opai.controller.model.Message;
+import com.unfbx.chatgpt.OpenAiStreamClient;
+import com.unfbx.chatgpt.entity.billing.Subscription;
+import com.unfbx.chatgpt.entity.chat.ChatCompletion;
+import com.unfbx.chatgpt.entity.chat.Message;
+import com.unfbx.chatgpt.interceptor.OpenAILogger;
+import com.unfbx.chatgpt.sse.ConsoleEventSourceListener;
+import com.yfs.opai.controller.model.WeChatMessage;
 import com.yfs.opai.controller.model.WeChatResponseData;
 import com.yfs.opai.controller.utils.RedisUtil;
 import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import okhttp3.logging.HttpLoggingInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.cache.CacheProperties;
 import org.springframework.context.support.AbstractXmlApplicationContext;
@@ -27,6 +35,8 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -35,6 +45,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 
 @RequestMapping("wechat")
@@ -47,17 +59,17 @@ public class WechatController {
 
 
     @GetMapping("save")
-    public String save(String fromUserName, String content){
-        String roleType ;
+    public String save(String fromUserName, String content) {
+        String roleType;
         final List<ChatMessage> messages = new ArrayList<>();
-        if (!redisUtil.hasKey(fromUserName)){
+        if (!redisUtil.hasKey(fromUserName)) {
             roleType = ChatMessageRole.SYSTEM.value();
-        }else {
+        } else {
             roleType = ChatMessageRole.USER.value();
             List<String> range = redisUtil.range(fromUserName, 0, redisUtil.listLength(fromUserName));
             for (String s : range) {
                 JSON json = JSONUtil.parse(s);
-                messages.add(new ChatMessage(json.getByPath("role",String.class),json.getByPath("content",String.class)));
+                messages.add(new ChatMessage(json.getByPath("role", String.class), json.getByPath("content", String.class)));
             }
         }
         ChatMessage newQuestion = new ChatMessage(roleType, content);
@@ -72,11 +84,11 @@ public class WechatController {
                 .build();
         List<ChatCompletionChoice> choices = openAiService.createChatCompletion(chatCompletionRequest).getChoices();
         String resultContent = choices.get(0).getMessage().getContent();
-        redisUtil.rightPush(fromUserName,JSONUtil.toJsonStr(newQuestion));
-        redisUtil.rightPush(fromUserName,JSONUtil.toJsonStr(new ChatMessage(ChatMessageRole.ASSISTANT.value(), resultContent)));
+        redisUtil.rightPush(fromUserName, JSONUtil.toJsonStr(newQuestion));
+        redisUtil.rightPush(fromUserName, JSONUtil.toJsonStr(new ChatMessage(ChatMessageRole.ASSISTANT.value(), resultContent)));
         List<String> range = redisUtil.range(fromUserName, 0, redisUtil.listLength(fromUserName));
-        redisUtil.expire(fromUserName,30*60);
-        return  JSONUtil.toJsonStr(range);
+        redisUtil.expire(fromUserName, 30 * 60);
+        return JSONUtil.toJsonStr(range);
     }
 
 
@@ -116,21 +128,21 @@ public class WechatController {
             Document doc = dBuilder.parse(inputStream);
             NodeList nodeList = doc.getElementsByTagName("xml").item(0).getChildNodes();
             String toUserName = nodeList.item(1).getTextContent();
-             fromUserName = nodeList.item(3).getTextContent();
+            fromUserName = nodeList.item(3).getTextContent();
             String createTime = nodeList.item(5).getTextContent();
             String msgType = nodeList.item(7).getTextContent();
             String content = nodeList.item(9).getTextContent();
             String msgId = nodeList.item(11).getTextContent();
-            String roleType ;
+            String roleType;
             final List<ChatMessage> messages = new ArrayList<>();
-            if (!redisUtil.hasKey(fromUserName)){
+            if (!redisUtil.hasKey(fromUserName)) {
                 roleType = ChatMessageRole.SYSTEM.value();
-            }else {
+            } else {
                 roleType = ChatMessageRole.USER.value();
                 List<String> range = redisUtil.range(fromUserName, 0, redisUtil.listLength(fromUserName));
                 for (String s : range) {
                     JSON json = JSONUtil.parse(s);
-                    messages.add(new ChatMessage(json.getByPath("role",String.class),json.getByPath("content",String.class)));
+                    messages.add(new ChatMessage(json.getByPath("role", String.class), json.getByPath("content", String.class)));
                 }
             }
             ChatMessage newQuestion = new ChatMessage(roleType, content);
@@ -149,9 +161,9 @@ public class WechatController {
             String resultContent = choices.get(0).getMessage().getContent();
             weChatResponseData.setContent(resultContent);
             weChatResponseData.setToUserName(fromUserName);
-            redisUtil.rightPush(fromUserName,JSONUtil.toJsonStr(newQuestion));
-            redisUtil.rightPush(fromUserName,JSONUtil.toJsonStr(new ChatMessage(ChatMessageRole.ASSISTANT.value(), resultContent)));
-            redisUtil.expire(fromUserName,30*60);
+            redisUtil.rightPush(fromUserName, JSONUtil.toJsonStr(newQuestion));
+            redisUtil.rightPush(fromUserName, JSONUtil.toJsonStr(new ChatMessage(ChatMessageRole.ASSISTANT.value(), resultContent)));
+            redisUtil.expire(fromUserName, 30 * 60);
             return weChatResponseData;
         } catch (Exception e) {
             log.warn("失敗{},{}", e, fromUserName);
@@ -161,9 +173,9 @@ public class WechatController {
     }
 
     @RequestMapping("proxy")
-    public String proxy(){
+    public String proxy() {
         OpenAiService service = CustomOkHttpClient.getService();
-        Message message = new Message();
+        WeChatMessage message = new WeChatMessage();
         message.setRole("user");
         message.setContent("proxy");
         List<ChatMessage> messages = new ArrayList<>();
@@ -176,10 +188,47 @@ public class WechatController {
                 .logitBias(new HashMap<>())
                 .build();
         List<ChatCompletionChoice> res = openAiService.createChatCompletion(chatCompletionRequest).getChoices();
-        return  JSONUtil.toJsonStr(res);
+        return JSONUtil.toJsonStr(res);
 
     }
 
+    public static void main(String[] args) {
+                //国内访问需要做代理，国外服务器不需要
+                Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress("38.6.178.54", 6666));
+                HttpLoggingInterceptor httpLoggingInterceptor = new HttpLoggingInterceptor(new OpenAILogger());
+                //！！！！千万别再生产或者测试环境打开BODY级别日志！！！！
+                //！！！生产或者测试环境建议设置为这三种级别：NONE,BASIC,HEADERS,！！！
+                httpLoggingInterceptor.setLevel(HttpLoggingInterceptor.Level.HEADERS);
+                OkHttpClient okHttpClient = new OkHttpClient
+                        .Builder()
+                        .proxy(proxy)//自定义代理
+                        .addInterceptor(httpLoggingInterceptor)//自定义日志
+                        .connectTimeout(30, TimeUnit.SECONDS)//自定义超时时间
+                        .writeTimeout(30, TimeUnit.SECONDS)//自定义超时时间
+                        .readTimeout(30, TimeUnit.SECONDS)//自定义超时时间
+                        .build();
+                OpenAiStreamClient client = OpenAiStreamClient.builder()
+                        .apiKey(Arrays.asList("sk->"))
+                        //自定义key的获取策略：默认KeyRandomStrategy
+                        //.keyStrategy(new KeyRandomStrategy())
+//                        .keyStrategy(new FirstKeyStrategy())
+                        .okHttpClient(okHttpClient)
+                        //自己做了代理就传代理地址，没有可不不传
+//                .apiHost("https://自己代理的服务器地址/")
+                        .build();
+
+//聊天模型：gpt-3.5
+        ConsoleEventSourceListener eventSourceListener = new ConsoleEventSourceListener();
+        Message message = Message.builder().role(Message.Role.USER).content("你好啊我的伙伴！").build();
+        ChatCompletion chatCompletion = ChatCompletion.builder().messages(Arrays.asList(message)).build();
+        client.streamChatCompletion(chatCompletion, eventSourceListener);
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 
 
 }
