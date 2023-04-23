@@ -1,19 +1,17 @@
 package com.yfs.opai.controller;
 
 import cn.hutool.json.JSON;
-import cn.hutool.json.JSONConverter;
 import cn.hutool.json.JSONUtil;
 import com.theokanning.openai.completion.chat.*;
 import com.theokanning.openai.service.OpenAiService;
 import com.unfbx.chatgpt.OpenAiStreamClient;
-import com.unfbx.chatgpt.entity.billing.Subscription;
 import com.unfbx.chatgpt.entity.chat.ChatCompletion;
 import com.unfbx.chatgpt.entity.chat.Message;
 import com.unfbx.chatgpt.interceptor.OpenAILogger;
 import com.unfbx.chatgpt.sse.ConsoleEventSourceListener;
 import com.yfs.opai.controller.model.WeChatMessage;
 import com.yfs.opai.controller.model.WeChatResponseData;
-import com.yfs.opai.controller.utils.RedisUtil;
+import com.yfs.opai.utils.RedisUtil;
 import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.SneakyThrows;
@@ -21,9 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 import okhttp3.logging.HttpLoggingInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.cache.CacheProperties;
-import org.springframework.context.support.AbstractXmlApplicationContext;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,13 +28,10 @@ import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -172,25 +164,6 @@ public class WechatController {
         }
     }
 
-    @RequestMapping("proxy")
-    public String proxy() {
-        OpenAiService service = CustomOkHttpClient.getService();
-        WeChatMessage message = new WeChatMessage();
-        message.setRole("user");
-        message.setContent("proxy");
-        List<ChatMessage> messages = new ArrayList<>();
-        ChatCompletionRequest chatCompletionRequest = ChatCompletionRequest
-                .builder()
-                .model("gpt-3.5-turbo")
-                .messages(messages)
-                .n(1)
-                .maxTokens(250)
-                .logitBias(new HashMap<>())
-                .build();
-        List<ChatCompletionChoice> res = openAiService.createChatCompletion(chatCompletionRequest).getChoices();
-        return JSONUtil.toJsonStr(res);
-
-    }
 
     public static void main(String[] args) {
                 //国内访问需要做代理，国外服务器不需要
